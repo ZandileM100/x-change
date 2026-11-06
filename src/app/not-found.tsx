@@ -1,0 +1,2 @@
+"use client"; import Link from "next/link"; import Shell from "@/components/Shell";
+export default function NotFound() { return <Shell auth={false}><div className="card" style={{ textAlign: "center", padding: "2.5rem" }}><p style={{ fontSize: "3rem", margin: 0 }}>🔍</p><h1>Page not found</h1><p className="muted">That page doesn't exist or has moved.</p><Link href="/" className="btn">Go home</Link> <Link href="/listings" className="btn sec">Explore skills</Link></div></Shell>; }

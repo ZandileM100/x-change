@@ -1,0 +1,23 @@
+"use client";
+import { useEffect, useState } from "react"; import Shell, { useMe } from "@/components/Shell"; import { supabase } from "@/lib/supabase";
+// The UI gate is cosmetic; real enforcement is RLS (is_admin()) in the database.
+function Inner() {
+  const { me } = useMe(); const [ok, setOk] = useState<boolean | null>(null); const [cats, setCats] = useState<{ id: string; name: string; category: string }[]>([]); const [fb, setFb] = useState<{ id: string; title: string; status: string; priority: string }[]>([]);
+  const [audit, setAudit] = useState<{ id: number; action: string; target_table: string; created_at: string }[]>([]); const [users, setUsers] = useState<{ id: string; display_name: string; role: string; reputation_points: number }[]>([]); const [lst, setLst] = useState<{ id: string; title: string; status: string }[]>([]); const [stats, setStats] = useState({ users: 0, listings: 0, matches: 0 });
+  const load = () => { supabase.from("profiles").select("id,display_name,role,reputation_points").order("created_at", { ascending: false }).limit(50).then(r => setUsers(r.data ?? [])); supabase.from("listings").select("id,title,status").order("created_at", { ascending: false }).limit(30).then(r => setLst(r.data ?? [])); supabase.from("skills").select("id,name,category").eq("status", "pending").then(r => setCats(r.data ?? [])); supabase.from("feedback").select("id,title,status,priority").order("created_at", { ascending: false }).limit(50).then(r => setFb(r.data ?? []));
+    supabase.from("audit_events").select("id,action,target_table,created_at").order("created_at", { ascending: false }).limit(20).then(r => setAudit(r.data ?? []));
+    (["profiles", "listings", "matches"] as const).forEach(t => supabase.from(t).select("id", { count: "exact", head: true }).then(r => setStats(s => ({ ...s, [t === "profiles" ? "users" : t]: r.count ?? 0 })))); };
+  useEffect(() => { if (me) supabase.from("profiles").select("role").eq("id", me.id).single().then(r => { const a = r.data?.role === "admin"; setOk(a); if (a) load(); }); }, [me]);
+  if (ok === null) return <p>Loading…</p>; if (!ok) return <p className="card err" role="alert">Access denied. Administrator role required.</p>;
+  const setSkill = async (id: string, status: string) => { await supabase.from("skills").update({ status }).eq("id", id); load(); };
+  const setFeedback = async (id: string, patch: object) => { await supabase.from("feedback").update(patch).eq("id", id); load(); };
+  return <><h1>Administration</h1><p className="card">Users {stats.users} · Listings {stats.listings} · Matches {stats.matches}</p>
+    <h2>Pending skill categories</h2>{cats.length === 0 && <p className="card">None pending.</p>}{cats.map(c => <p className="card" key={c.id}>{c.name} ({c.category}) <button onClick={() => setSkill(c.id, "approved")}>Approve</button><button className="sec" onClick={() => setSkill(c.id, "rejected")}>Reject</button></p>)}
+    <h2>Feedback triage</h2>{fb.map(r => <div className="card" key={r.id}>{r.title}<br /><label htmlFor={`s${r.id}`}>Status</label><select id={`s${r.id}`} value={r.status} onChange={e => setFeedback(r.id, { status: e.target.value })}>{["open", "triaged", "in_progress", "resolved", "duplicate"].map(s => <option key={s}>{s}</option>)}</select>
+      <label htmlFor={`p${r.id}`}>Priority</label><select id={`p${r.id}`} value={r.priority} onChange={e => setFeedback(r.id, { priority: e.target.value })}>{["unset", "low", "medium", "high"].map(s => <option key={s}>{s}</option>)}</select></div>)}
+    <h2>User management</h2>{users.map(u => <p className="card row" key={u.id}><b>{u.display_name}</b><span className="tag">{u.role}</span><span className="muted">{u.reputation_points} pts</span>{u.id !== me?.id && <button className="sec" style={{ marginLeft: "auto" }} onClick={async () => { await supabase.from("profiles").update({ role: u.role === "admin" ? "user" : "admin" }).eq("id", u.id); load(); }}>{u.role === "admin" ? "Remove admin" : "Make admin"}</button>}</p>)}
+    <h2>Listing moderation</h2>{lst.map(l => <p className="card row" key={l.id}>{l.title}<span className="tag">{l.status}</span><button className="sec" style={{ marginLeft: "auto" }} onClick={async () => { await supabase.from("listings").update({ status: l.status === "active" ? "inactive" : "active" }).eq("id", l.id); load(); }}>{l.status === "active" ? "Deactivate" : "Reactivate"}</button></p>)}
+    <h2>Audit events</h2>{audit.map(a => <p className="muted" key={a.id}>{new Date(a.created_at).toLocaleString()} · {a.action} on {a.target_table}</p>)}
+    </>;
+}
+export default function Admin() { return <Shell><Inner /></Shell>; }
